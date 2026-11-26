@@ -363,4 +363,97 @@ jobs:
                           try {
                               val url = Regex("https?://\\S+").find(text)?.value
                               val page = url?.let { runCatching { fetchPage(it) }.getOrNull() }
-                              eng.ask(buildPrompt(rules, lessons.toLi
+                              eng.ask(buildPrompt(rules, lessons.toList(), hist, text, page), img)
+                          } catch (e: Throwable) { "Error: ${e.message}" }
+                      }
+                      msgs.add(Msg(false, reply)); busy = false; status = "on"
+                  }
+              }
+
+              Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0B0B1A), Color(0xFF241046)))).systemBarsPadding()) {
+                  Column(Modifier.fillMaxSize()) {
+                      Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                          SpinLogo(48.dp)
+                          Spacer(Modifier.width(12.dp))
+                          Column(Modifier.weight(1f)) {
+                              Text("untitled", fontSize = 26.sp, fontWeight = FontWeight.Black, color = Cyan)
+                              Text(status, fontSize = 12.sp, color = Color.White.copy(alpha = .6f))
+                          }
+                          Switch(checked = on, onCheckedChange = { power(it) }, enabled = !busy,
+                              colors = SwitchDefaults.colors(checkedTrackColor = Pink))
+                      }
+                      Box(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                          when (tab) {
+                              0 -> Column {
+                                  LazyColumn(Modifier.weight(1f), state = listState) { items(msgs) { Bubble(it) } }
+                                  if (pending != null) Text("🖼 image attached", color = Pink, modifier = Modifier.padding(4.dp))
+                                  Row(verticalAlignment = Alignment.CenterVertically) {
+                                      TextButton(onClick = { imgPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("🖼", fontSize = 22.sp) }
+                                      OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Teach me or ask me...") }, maxLines = 4)
+                                      TextButton(onClick = { send(input) }, enabled = !busy) { Text("➤", fontSize = 22.sp, color = Pink) }
+                                  }
+                              }
+                              1 -> Column {
+                                  Text("Teach me. Everything here is remembered and used in my answers.", color = Color.White.copy(alpha = .7f))
+                                  Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                                      OutlinedTextField(newLesson, { newLesson = it }, Modifier.weight(1f), placeholder = { Text("e.g. My dog is called Rex") })
+                                      Button(onClick = {
+                                          if (newLesson.isNotBlank()) { lessons.add(newLesson.replace("\n", " ").trim()); st.saveLessons(lessons); newLesson = "" }
+                                      }, colors = ButtonDefaults.buttonColors(containerColor = Pink)) { Text("Add") }
+                                  }
+                                  LazyColumn { items(lessons.toList()) { l ->
+                                      Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).background(Cyan.copy(alpha = .12f), RoundedCornerShape(12.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                          Text(l, Modifier.weight(1f), color = Color.White)
+                                          TextButton(onClick = { lessons.remove(l); st.saveLessons(lessons) }) { Text("✕", color = Pink) }
+                                      }
+                                  } }
+                              }
+                              else -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                  Text("Custom rules", fontWeight = FontWeight.Bold, color = Cyan)
+                                  OutlinedTextField(rules, { rules = it; st.rules = it }, Modifier.fillMaxWidth(), minLines = 4)
+                                  Text("Model", fontWeight = FontWeight.Bold, color = Cyan)
+                                  Text(if (model.isBlank()) "Optional. With no model, the built-in basic brain is used." else "Model loaded from storage.", color = Color.White.copy(alpha = .7f))
+                                  Button(onClick = { modelPicker.launch(arrayOf("*/*")) }, enabled = !busy && !on,
+                                      colors = ButtonDefaults.buttonColors(containerColor = Violet)) { Text("Pick model file (.task)") }
+                              }
+                          }
+                      }
+                      NavigationBar(containerColor = Color(0xFF15152B)) {
+                          listOf("💬" to "Chat", "🧠" to "Teach", "⚙" to "Settings").forEachIndexed { i, (e, n) ->
+                              NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(e, fontSize = 20.sp) }, label = { Text(n) })
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+          mkdir -p app/src/main/res/values
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <resources><style name="Theme.Untitled" parent="android:Theme.Material.NoActionBar"/></resources>
+          EOF
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.20" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.20" apply false
+          }
+          EOF
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          org.gradle.jvmargs=-Xmx2g
+          EOF
+          mkdir -p gradle/wrapper
+          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+          EOF
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "untitled"
+          include(":app")
+          EOF
+      - run: gradle assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: untitled-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
